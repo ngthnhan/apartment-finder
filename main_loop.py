@@ -1,13 +1,14 @@
 from scraper import Scraper
+from condition import LocationCondition
 import settings
 import time
 import sys
 import traceback
 
-if __name__ == "__main__":
+if "__main__" == __name__:
     # Define areas to search for with accompanying filters
     areas_filters_dict = {
-        "see": {"max_price": 800}
+        "see": {"max_price": 800, "min_price": 400}
     }
 
     # Define slack settings
@@ -21,6 +22,9 @@ if __name__ == "__main__":
                       category="roo",
                       areas_filters_dict=areas_filters_dict,
                       slack_settings=slack_settings)
+
+    # Initialize filtering conditions
+    scraper.add_condition(LocationCondition())
 
     # Main loop to scrape info and post new matching listings
     while True:

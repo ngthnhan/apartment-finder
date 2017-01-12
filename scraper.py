@@ -8,6 +8,7 @@ from dateutil.parser import parse
 from util import find_points_of_interest
 from slackclient import SlackClient
 import settings
+from condition import Condition, LocationCondition
 
 # Database connection
 DBEngine = create_engine('sqlite:///listings.db', echo=False)
@@ -63,93 +64,20 @@ class Scraper:
         self.slack_client = SlackClient(slack_settings["slack_token"])
         self.slack_channel = slack_settings["slack_channel"]
 
-    def scrape_area(self, area):
+        # Initialize filtering conditions
+        self.conditions = []
+
+    def add_condition(self, condition):
         """
-        Scrapes craigslist for a certain geographic area, and finds 
-        the latest listings.
-        :param area:
-        :return: A list of results.
+        Adds the filtering condition to weed out listings.
         """
-        # Get the latest listing on Craigslist
-        listings = self.cl_clients[area].get_results(sort_by='newest',
-                                                      geotagged=True,
-                                                      limit=20)
-        results = []
+        # Data validation
+        if condition is None or not isinstance(condition, Condition):
+            print("Condition is not well defined.")
+            return
 
-        for listing in listings:
-            print(listing)
-
-        return results
-
-    # def scrape_area(self, area):
-    #     """
-    #     Scrapes craigslist for a certain geographic area, and finds 
-    #     the latest listings.
-    #     :param area:
-    #     :return: A list of results.
-    #     """
-
-    #     results = []
-    #     gen = cl_h.get_results(sort_by='newest', geotagged=True, limit=20)
-    #     while True:
-    #         try:
-    #             result = next(gen)
-    #         except StopIteration:
-    #             break
-    #         except Exception:
-    #             continue
-    #         listing = session.query(Listing).filter_by(cl_id=result["id"]).first()
-
-    #         # Don't store the listing if it already exists.
-    #         if listing is None:
-    #             if result["where"] is None:
-    #                 # If there is no string identifying which neighborhood the result is from, skip it.
-    #                 continue
-
-    #             lat = 0
-    #             lon = 0
-    #             if result["geotag"] is not None:
-    #                 # Assign the coordinates.
-    #                 lat = result["geotag"][0]
-    #                 lon = result["geotag"][1]
-
-    #                 # Annotate the result with information about the area it's in and points of interest near it.
-    #                 geo_data = find_points_of_interest(result["geotag"], result["where"])
-    #                 result.update(geo_data)
-    #             else:
-    #                 result["area"] = ""
-    #                 result["bart"] = ""
-
-    #             # Try parsing the price.
-    #             price = 0
-    #             try:
-    #                 price = float(result["price"].replace("$", ""))
-    #             except Exception:
-    #                 pass
-
-    #             # Create the listing object.
-    #             listing = Listing(
-    #                 link=result["url"],
-    #                 created=parse(result["datetime"]),
-    #                 lat=lat,
-    #                 lon=lon,
-    #                 name=result["name"],
-    #                 price=price,
-    #                 location=result["where"],
-    #                 cl_id=result["id"],
-    #                 area=result["area"],
-    #                 bart_stop=result["bart"]
-    #             )
-
-    #             # Save the listing so we don't grab it again.
-    #             session.add(listing)
-    #             session.commit()
-
-    #             # Return the result if it's near a bart station, or if it is in an area we defined.
-    #             if len(result["bart"]) > 0 or len(result["area"]) > 0:
-    #                 results.append(result)
-
-    #     return results
+        # Add the condition
+        self.conditions.append(condition)
 
     def scrape(self):
         """
@@ -158,7 +86,7 @@ class Scraper:
 
         # Get all the results from craigslist.
         all_results = []
-        for area in self.cl_clients.keys():
+        for area in self.cl_clients:
             all_results += self.scrape_area(area)
 
         print("{}: Got {} results".format(time.ctime(), len(all_results)))
@@ -167,17 +95,72 @@ class Scraper:
         for result in all_results:
             self.post_listing_to_slack(result)
 
-    def post_listing_to_slack(self, result):
+    def scrape_area(self, area):
+        """
+        Scrapes craigslist for a certain geographic area, and finds
+        the latest listings.
+        :param area:
+        :return: A list of results.
+        """
+        # Get the latest listing on Craigslist
+        listings = self.cl_clients[area].get_results(sort_by='newest',
+                                                     geotagged=True,
+                                                     limit=20)
+        results = []
+
+        print("Browsing through the new listings...")
+
+        # Process new listing and check for criteria
+        for listing in listings:
+            # Skip the listing if it is already in the database
+            existing_listing = session.query(Listing).filter_by(cl_id=listing["id"]).first()
+            if existing_listing is not None:
+                continue
+
+            # Create and save the listing so we don't grab it again.
+            listing_entity = self._create_listing_entity(listing)
+            session.add(listing_entity)
+            session.commit()
+
+            # Update location and transportation information
+            listing = self.update_geographic_information(listing)
+
+            # Check the listing against conditions
+            is_good_listing = True
+            for condition in self.conditions:
+                # Continue if the listing satisfies the current condition
+                if condition.check(listing):
+                    continue
+
+                # Otherwise, mark the listing as bad
+                is_good_listing = False
+                break
+
+            # Do nothing if it is a bad listing
+            if not is_good_listing:
+                continue
+
+            # Add the listing to return listings and database
+            results.append(listing)
+
+        # Return all the good results
+        return results
+
+    def post_listing_to_slack(self, listing):
         """
         Posts the result to Slack channel.
         :param result: The result to post to Slack channel.
         """
+
+        print(listing)
+
         # Build the description string to post
-        desc = "{0} | {1} | {2} | {3} | <{4}>".format(listing["area"],
-                                                      listing["price"],
-                                                      listing["bart_dist"],
-                                                      listing["name"],
-                                                      listing["url"])
+        desc = "{} | {} | {} | <{}>".format(listing["area"],
+                                            listing["price"],
+                                            listing["name"],
+                                            listing["url"])
+
+        print(desc)
 
         # Post to Slack
         self.slack_client.api_call("chat.postMessage",
@@ -186,21 +169,50 @@ class Scraper:
                                    username='pybot',
                                    icon_emoji=':robot_face:')
 
-if "__main__" == __name__:
-    # Define areas to search for with accompanying filters
-    areas_filters_dict = {
-        "see": {"max_price": 800}
-    }
+    def update_geographic_information(self, listing):
+        """
+        Updates the geographic information such as location, lattitude,
+        longitude and transportation time.
+        :param listing: The listing from Craigslist.
+        :return: The updated listing result.
+        """
+        
 
-    # Define slack settings
-    slack_settings = {
-        "slack_token": "ABC",
-        "slack_channel": "housing"
-    }
+    def _create_listing_entity(self, listing):
+        """
+        Creates a listing entity for database from the listing result.
+        :param listing: The listing result from Craigslist.
+        :return: The Listing entity for database.
+        """
+        # Data validation
+        if listing is None:
+            print("Warning: listing parameter should not be None.")
+            return None
 
-    scraper = Scraper(site="seattle",
-                      category="roo",
-                      areas_filters_dict=areas_filters_dict,
-                      slack_settings=slack_settings)
-    
-    scraper.scrape()
+        # Parse the lattitude and longitude of the listing result
+        has_geotag = listing["geotag"] is not None
+        lat = listing["geotag"][0] if has_geotag else 0
+        lon = listing["geotag"][1] if has_geotag else 0
+
+        # Try parsing the price
+        price = -1
+        try:
+            price = float(listing["price"].replace("$", ""))
+        except OverflowError:
+            pass
+
+        # TODO: Clean up the area and bart station
+        listing["area"] = "Seattle"
+
+        # Create listing entity
+        return Listing(
+            link=listing["url"],
+            created=parse(listing["datetime"]),
+            lat=lat,
+            lon=lon,
+            name=listing["name"],
+            price=price,
+            location=listing["where"],
+            cl_id=listing["id"],
+            area=listing["area"],
+        )
