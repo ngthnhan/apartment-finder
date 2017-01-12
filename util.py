@@ -29,18 +29,6 @@ def in_box(coords, box):
         return True
     return False
 
-def post_listing_to_slack(sc, listing):
-    """
-    Posts the listing to slack.
-    :param sc: A slack client.
-    :param listing: A record of the listing.
-    """
-    desc = "{0} | {1} | {2} | {3} | <{4}>".format(listing["area"], listing["price"], listing["bart_dist"], listing["name"], listing["url"])
-    sc.api_call(
-        "chat.postMessage", channel=settings.SLACK_CHANNEL, text=desc,
-        username='pybot', icon_emoji=':robot_face:'
-    )
-
 def find_points_of_interest(geotag, location):
     """
     Find points of interest, like transit, near a result.
