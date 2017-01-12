@@ -187,11 +187,12 @@ class Scraper:
                                    icon_emoji=':robot_face:')
 
 if "__main__" == __name__:
-    print("Hello son!")
+    # Define areas to search for with accompanying filters
     areas_filters_dict = {
         "see": {"max_price": 800}
     }
 
+    # Define slack settings
     slack_settings = {
         "slack_token": "ABC",
         "slack_channel": "housing"
