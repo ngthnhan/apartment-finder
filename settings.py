@@ -113,6 +113,7 @@ SLACK_CHANNEL = "#housing"
 # The token that allows us to connect to slack.
 # Should be put in private.py, or set as an environment variable.
 SLACK_TOKEN = os.getenv('SLACK_TOKEN', "")
+GMAPS_API_KEY = os.getenv('GMAPS_API_KEY', "")
 
 # Any private settings are imported here.
 try:

@@ -5,7 +5,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean
 from sqlalchemy.orm import sessionmaker
 from dateutil.parser import parse
-from util import find_points_of_interest
+import location_helper
 from slackclient import SlackClient
 import settings
 from condition import Condition, LocationCondition
@@ -151,8 +151,10 @@ class Scraper:
         Posts the result to Slack channel.
         :param result: The result to post to Slack channel.
         """
-
-        print(listing)
+        # Data validation
+        if listing is not None and not listing:
+            print("Warning: The listing is not well defined.")
+            return
 
         # Build the description string to post
         desc = "{} | {} | {} | <{}>".format(listing["area"],
@@ -160,7 +162,7 @@ class Scraper:
                                             listing["name"],
                                             listing["url"])
 
-        print(desc)
+        print("Desc: {}".format(desc))
 
         # Post to Slack
         self.slack_client.api_call("chat.postMessage",
@@ -176,7 +178,36 @@ class Scraper:
         :param listing: The listing from Craigslist.
         :return: The updated listing result.
         """
+        # Data validation
+        if listing is not None and not listing:
+            print("Warning: The listing is not well defined.")
+            return listing
         
+        # Try to get the geocode from geotag if present
+        if "geotag" in listing and listing["geotag"] is not None:
+            listing["lat"] = listing["geotag"][0]
+            listing["lon"] = listing["geotag"][1]
+            return listing
+        
+        # Try to deduce the geocode from the locations
+        locations = []
+        if "where" in listing and listing["where"] is not None:
+            locations = location_helper.parse_locations(listing["where"])
+
+        # Calculate the average geocode of all the locations
+        avg_lat = 0
+        avg_lon = 0
+        count = 0
+        for location in locations:
+            lat, lon = location_helper.get_geocode(location)
+            avg_lat += lat
+            avg_lon += lon
+            count += 1
+        listing["lat"] = avg_lat / count
+        listing["lon"] = avg_lon / count
+
+        # Return the updated listing
+        return listing
 
     def _create_listing_entity(self, listing):
         """
