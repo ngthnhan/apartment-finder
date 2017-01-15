@@ -92,6 +92,9 @@ TRANSIT_STATIONS = {
     "north_berkeley_bart": [37.8713411,-122.2849758]
 }
 
+# The departure time for transit that is default to 01/09/2017 at 7.30am
+TRANSIT_DEPARTURE_TIME = 1483975800
+
 ## Search type preferences
 
 # The Craigslist section underneath housing that you want to search in.
@@ -114,6 +117,7 @@ SLACK_CHANNEL = "#housing"
 # Should be put in private.py, or set as an environment variable.
 SLACK_TOKEN = os.getenv('SLACK_TOKEN', "")
 GMAPS_API_KEY = os.getenv('GMAPS_API_KEY', "")
+WORK_ADDRESS = os.getenv('WORK_ADDRESS', "")
 
 # Any private settings are imported here.
 try:

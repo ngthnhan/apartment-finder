@@ -32,7 +32,7 @@ class Listing(Base):
     location = Column(String)
     cl_id = Column(Integer, unique=True)
     area = Column(String)
-    bart_stop = Column(String)
+    commute_time = Column(Float)
 
 Base.metadata.create_all(DBEngine)
 
@@ -66,6 +66,9 @@ class Scraper:
 
         # Initialize filtering conditions
         self.conditions = []
+
+        # Initialize work geocode
+        self.work_geocode = location_helper.get_geocode(settings.WORK_ADDRESS)
 
     def add_condition(self, condition):
         """
@@ -117,13 +120,13 @@ class Scraper:
             if existing_listing is not None:
                 continue
 
+            # Update location and transportation information
+            listing = self.update_geographic_information(listing)
+
             # Create and save the listing so we don't grab it again.
             listing_entity = self._create_listing_entity(listing)
             session.add(listing_entity)
             session.commit()
-
-            # Update location and transportation information
-            listing = self.update_geographic_information(listing)
 
             # Check the listing against conditions
             is_good_listing = True
@@ -156,11 +159,19 @@ class Scraper:
             print("Warning: The listing is not well defined.")
             return
 
+        # Commute time
+        duration = listing['commute_time']
+        minutes = duration // 60
+        seconds = duration % 60
+
         # Build the description string to post
-        desc = "{} | {} | {} | <{}>".format(listing["area"],
-                                            listing["price"],
-                                            listing["name"],
-                                            listing["url"])
+        desc = "{} | {} | {} | {}m{}s | <{}>".format(
+            listing["area"],
+            listing["price"],
+            listing["name"],
+            minutes,
+            seconds,
+            listing["url"])
 
         print("Desc: {}".format(desc))
 
@@ -187,24 +198,28 @@ class Scraper:
         if "geotag" in listing and listing["geotag"] is not None:
             listing["lat"] = listing["geotag"][0]
             listing["lon"] = listing["geotag"][1]
-            return listing
-        
-        # Try to deduce the geocode from the locations
-        locations = []
-        if "where" in listing and listing["where"] is not None:
-            locations = location_helper.parse_locations(listing["where"])
+        else:
+            # Try to deduce the geocode from the locations
+            locations = []
+            if "where" in listing and listing["where"] is not None:
+                locations = location_helper.parse_locations(listing["where"])
 
-        # Calculate the average geocode of all the locations
-        avg_lat = 0
-        avg_lon = 0
-        count = 0
-        for location in locations:
-            lat, lon = location_helper.get_geocode(location)
-            avg_lat += lat
-            avg_lon += lon
-            count += 1
-        listing["lat"] = avg_lat / count
-        listing["lon"] = avg_lon / count
+            # Calculate the average geocode of all the locations
+            avg_lat = 0
+            avg_lon = 0
+            count = 0
+            for location in locations:
+                lat, lon = location_helper.get_geocode(location)
+                avg_lat += lat
+                avg_lon += lon
+                count += 1
+            listing["lat"] = avg_lat / count
+            listing["lon"] = avg_lon / count
+
+        # Calculate the travel time
+        src = (listing['lat'], listing['lon'])
+        listing['commute_time'] = location_helper.get_travel_time(src,
+                                                                  self.work_geocode)
 
         # Return the updated listing
         return listing
@@ -220,11 +235,6 @@ class Scraper:
             print("Warning: listing parameter should not be None.")
             return None
 
-        # Parse the lattitude and longitude of the listing result
-        has_geotag = listing["geotag"] is not None
-        lat = listing["geotag"][0] if has_geotag else 0
-        lon = listing["geotag"][1] if has_geotag else 0
-
         # Try parsing the price
         price = -1
         try:
@@ -239,11 +249,12 @@ class Scraper:
         return Listing(
             link=listing["url"],
             created=parse(listing["datetime"]),
-            lat=lat,
-            lon=lon,
+            lat=listing["lat"],
+            lon=listing["lon"],
             name=listing["name"],
             price=price,
             location=listing["where"],
             cl_id=listing["id"],
             area=listing["area"],
+            commute_time=listing["commute_time"]
         )

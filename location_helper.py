@@ -25,14 +25,15 @@ def get_travel_time(src_geocode, dst_geocode, mode="transit"):
         'key': settings.GMAPS_API_KEY,
         'origin': '{},{}'.format(src_geocode[0], src_geocode[1]),
         'destination': '{},{}'.format(dst_geocode[0], dst_geocode[1]),
-        'mode': mode 
+        'departure_time': settings.TRANSIT_DEPARTURE_TIME,
+        'mode': mode
     }
     response = requests.get(GMAPS_DIRECTIONS_URL, params=params)
     results = json.loads(response.text)
 
     # Return the default value if status returned is not 'OK'
     if results['status'] != 'OK':
-        print('Warning: Status is not OK.')
+        print('Warning: Status <{}> is not OK.'.format(results['status']))
         return -1
 
     # Get the first route and calculate the total duration
@@ -63,7 +64,7 @@ def get_geocode(location):
 
     # Return default value if status returned is not 'OK'
     if results['status'] != 'OK':
-        print('Warning: Status is not OK.')
+        print('Warning: Status <{}> is not OK.'.format(results['status']))
         return (0, 0)
 
     # Get the first location result from the response
@@ -90,7 +91,7 @@ def parse_locations(locations_str):
     for location in raw_locations:
         location = location.strip()
         if location:
-            locations.append(location.tolower())
+            locations.append(location.lower())
 
     return locations
 

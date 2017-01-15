@@ -13,8 +13,8 @@ if "__main__" == __name__:
 
     # Define slack settings
     slack_settings = {
-        "slack_token": "ABC",
-        "slack_channel": "housing"
+        "slack_token": settings.SLACK_TOKEN,
+        "slack_channel": settings.SLACK_CHANNEL
     }
 
     # Initialize scraper
